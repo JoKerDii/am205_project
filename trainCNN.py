@@ -14,12 +14,12 @@ from meso import *
 class Config(object):
     def __init__(self):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.model_name = 'vgg16' 
+        self.model_name = 'resnet18' 
         self.classes = ('fake', 'real')
         self.metric_path = f'./{self.model_name}_testmetric.pkl'
 
 def data_loading(config):
-    if config.model_name == 'vgg16':
+    if config.model_name in ['vgg16', 'resnet18'] :
         transform_train = transforms.Compose([
             transforms.Resize((224,224)),
             transforms.ToTensor(),
@@ -30,7 +30,7 @@ def data_loading(config):
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
-    elif config.model_name == 'meso':
+    elif config.model_name in ([['meso', 'mesoinception']]):
         transform_train = transforms.Compose([
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
@@ -48,12 +48,26 @@ def data_loading(config):
     testing_loader = torch.utils.data.DataLoader(testing_dataset, batch_size = 20, shuffle=False)
     return training_loader, testing_loader
 
+def building_resnet(config):
+    print(f"Model name: {config.model_name}.")
+    model = models.resnet34(pretrained=True)
+    # Fix pre-trained model's parameters
+    for param in model.parameters():
+        param.requires_grad = False
+    # Change the number of the output neurons from 1000 to len(classes) 2
+    num_ftrs = model.fc.in_features
+    model.fc = nn.Linear(num_ftrs, len(config.classes))
+    model.to(config.device)
+    print(f"Device: {config.device}.")
+    print(model)
+    return model
+
 def building_vgg16(config):
     print(f"Model name: {config.model_name}.")
     model = models.vgg16(pretrained=True)
     # Fix pre-trained model's parameters
-    # for param in model.features.parameters():
-    #     param.requires_grad = False
+    for param in model.features.parameters():
+        param.requires_grad = False
     # Change the number of the output neurons from 1000 to len(classes) 2
     n_inputs = model.classifier[6].in_features
     last_layer = nn.Linear(n_inputs, len(config.classes))
@@ -66,6 +80,13 @@ def building_vgg16(config):
 
 def building_meso(config):
     model = Meso4()
+    model.to(config.device)
+    print(f"Device: {config.device}.")
+    print(model)
+    return model
+
+def building_mesoinception(config):
+    model = MesoInception4()
     model.to(config.device)
     print(f"Device: {config.device}.")
     print(model)
@@ -204,13 +225,26 @@ if __name__ == "__main__":
         print("Start training...")
         bestmodel, train_loss_history,train_acc_history,test_loss_history,test_acc_history = training(config,
 model, criterion, optimizer, training_loader, testing_loader, epochs=10) 
+    elif config.model_name == "resnet18":
+        model = building_resnet(config)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr = 0.0001)
+        print("Start training...")
+        bestmodel, train_loss_history,train_acc_history,test_loss_history,test_acc_history = training(config, model, criterion, optimizer, training_loader, testing_loader, epochs=10)
     elif config.model_name == "meso":
         model = building_meso(config)
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08) 
         print("Start training...")
         bestmodel, train_loss_history,train_acc_history,test_loss_history,test_acc_history = training(config,
-model, criterion, optimizer, training_loader, testing_loader, epochs=10) 
+model, criterion, optimizer, training_loader, testing_loader, epochs=20) 
+    elif config.model_name == 'mesoinception':
+        model = building_mesoinception(config)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08) 
+        print("Start training...")
+        bestmodel, train_loss_history,train_acc_history,test_loss_history,test_acc_history = training(config,
+model, criterion, optimizer, training_loader, testing_loader, epochs=20) 
 
     train_score(config, bestmodel, training_loader)
     test_score(config, bestmodel, testing_loader)
